@@ -33,6 +33,7 @@ These tasks are built around failures that AI tools cannot prevent:
 - **Don't ask leading questions.** Give contradictory test cases and let the candidate discover the problem.
 - **Use "explain your AI's code" checkpoints.** After the AI generates a fix, ask the candidate to trace through specific scenarios line by line. This is the highest-signal moment in the interview.
 - **Watch for the "stop coding" moment.** The strongest signal is when a candidate recognizes that a problem cannot be solved with code and starts asking questions instead.
+- **Phases 3-4 are stretch goals.** Each task is designed so that a strong Phase 2 performance is sufficient. Later phases differentiate senior candidates but are not required. Don't rush through Phase 2 to reach Phase 3.
 
 ## Tasks
 

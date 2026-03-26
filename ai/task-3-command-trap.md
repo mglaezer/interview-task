@@ -29,7 +29,7 @@ undo                → point 6 is removed
 
 Don't critique the approach yet.
 
-## Phase 2: Groups — The Interaction Bug (~10 min)
+## Phase 2: Groups — The Interaction Bug (~15 min)
 
 > "Add `group create id1 id2 ...` (creates a named group) and `group move group-id dx dy` (moves all points in the group)."
 
@@ -58,7 +58,7 @@ redo                     → ??? does the group move re-apply? Do the points sti
 
 **Checkpoint — "Explain your AI's code":** Point to the group move undo logic. Ask: "If I delete point 2 after this group move, then undo the group move, what happens to point 2's position?" The candidate must trace through their code — the AI cannot answer this about its own generated code without context.
 
-## Phase 3: Redo and the Branching Decision (~7 min)
+## Phase 3: Redo and the Branching Decision (~5 min)
 
 > "Add `redo`. Then run this sequence:"
 
@@ -81,17 +81,18 @@ The AI will implement linear history (clear redo stack on new action). That's pr
 
 **What to look for:** Not which model they choose — but whether they recognize there IS a choice. "That's just how undo works" is weak. "Linear, because the branching UX would confuse users in a CLI tool" is strong.
 
-## Phase 4: Persistent History (~5 min if time permits)
+## Phase 4: Persistent History (discussion only, if time permits)
 
-> "The undo history must survive process restarts. When I reopen the tool, I should be able to undo my last session's work."
+> "The undo history must survive process restarts. When I reopen the tool, I should be able to undo my last session's work. How would you design this?"
 
-This forces serialization of commands to disk — which raises real design questions:
+This is a **discussion question**, not a coding exercise. Use it to probe design thinking if Phase 3 wraps up early.
 
+Questions to explore:
 - What format? JSON commands? A log file?
 - What if the code changes but old undo history references a command type that no longer exists?
 - How big can the history file get? Do you cap it?
 
-**What to look for:** This is a constraint that defeats AI pattern-matching. The AI can serialize commands, but handling versioning and forward compatibility requires judgment. Does the candidate think about what happens in 6 months when someone adds a new command type?
+**What to look for:** The AI can serialize commands, but handling versioning and forward compatibility requires judgment. Does the candidate think about what happens in 6 months when someone adds a new command type?
 
 ## Why This Task Works
 
@@ -99,5 +100,6 @@ This forces serialization of commands to disk — which raises real design quest
 - **Phase 2's bug is in the interaction** between two features (groups + undo), not in either feature alone. The AI implements each correctly — the bug emerges at the boundary.
 - **Phase 2's test sequence** is concrete — the candidate must run it and observe what happens, not just discuss it.
 - **Phase 3** has no right answer — it tests design judgment the AI cannot provide.
-- **Phase 4** introduces a constraint (persistence) that creates real decisions about format, versioning, and limits.
+- **Phase 4** is discussion-only — it probes design thinking without eating into coding time.
 - The "explain your AI's code" checkpoint in Phase 2 catches candidates who accepted the AI's output without understanding the interaction.
+- **A strong Phase 2 performance is sufficient.** Phase 2 is the core of this task — expect most candidates to spend the majority of the interview here. Phases 3-4 differentiate senior candidates but are not required.

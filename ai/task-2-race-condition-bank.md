@@ -48,7 +48,7 @@ Then have them implement their chosen approach and re-run `stress-test.sh`. The 
 
 **Checkpoint — "Walk me through the fix":** After the AI generates the locking code, ask the candidate to explain: Where is the lock acquired? What happens if the process dies while holding the lock? Is the lock advisory or mandatory? If they cannot answer, they did not understand the fix.
 
-## Phase 3: Separate Account Files (~8 min)
+## Phase 3: Separate Account Files (~8 min, stretch goal)
 
 > "Accounts are now stored in separate files: `accounts/A.json`, `accounts/B.json`. A transfer must debit one file and credit another. Adapt your solution."
 
@@ -63,12 +63,13 @@ If Transfer 1 locks A then B, and Transfer 2 locks B then A simultaneously, they
 
 This is genuinely harder than Phase 2 — the AI will produce locking code, but it may not enforce a consistent lock ordering. The bug is in the interaction between two correct lock operations.
 
-## Phase 4: Crash Recovery (~5 min if time permits)
+## Phase 4: Crash Recovery (discussion only, if time permits)
 
-> "What if the process crashes after debiting A but before crediting B? The money vanishes."
+> "What if the process crashes after debiting A but before crediting B? The money vanishes. How would you handle this?"
 
-This can be a discussion or a coding exercise depending on remaining time:
+This is a **discussion question**, not a coding exercise. Use it to probe the candidate's systems thinking if Phase 3 wraps up early.
 
+Possible directions:
 - **Write-ahead log:** Log the intent before executing. On startup, replay incomplete transactions.
 - **Two-phase write:** Debit and credit to temp files, then atomic rename both.
 - **Compensating transaction:** Detect partial failures on startup and reverse them.
@@ -80,6 +81,8 @@ This can be a discussion or a coding exercise depending on remaining time:
 - **Starter code with a pre-built test** eliminates setup time and makes the failure deterministic and observable.
 - **Phase 1** tests diagnosis, not pattern-matching — the candidate must trace a specific interleaving.
 - **Phase 2** requires a code artifact (fix + passing test), not just discussion.
-- **Phase 3** is genuinely different from Phase 2 — it introduces multi-resource coordination and deadlock, not just "more locking."
+- **Phase 3** is genuinely different from Phase 2 — it introduces multi-resource coordination and deadlock, not just "more locking." Use it as a stretch goal for candidates who move quickly through Phase 2.
+- **Phase 4** is discussion-only — use it to probe systems thinking without eating into coding time.
 - **"Explain your AI's code" checkpoints** directly test whether the candidate understands the fix or just accepted it.
 - The AI can suggest locking, but it's unlikely to handle lock ordering correctly across separate files without being explicitly directed.
+- **A strong Phase 2 performance (correct fix + clear justification) is sufficient.** Phases 3-4 differentiate senior candidates but are not required.

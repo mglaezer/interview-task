@@ -57,18 +57,18 @@ Ask: *"How many total provider calls were made for 100 notifications? Is that ac
 
 Set email to `--fail-rate 0` (never fails) but add a `--delay 3` flag (responds after 3 seconds).
 
-> "Send a notification via email. The system times out after 1 second and fails over to SMS. But the email was actually delivered — it was just slow. Alice gets the notification twice. Fix it."
+> "Send a notification via email. The system times out after 1 second and fails over to SMS. But the email was actually delivered — it was just slow. Alice gets the notification twice. How do you fix this?"
 
-This is a real distributed systems problem. Have the candidate implement a solution:
+This is a real distributed systems problem with no clean answer. Have the candidate **discuss their approach and sketch the design** rather than fully implement it — the trade-offs matter more than the code:
 
 | Approach | Upside | Downside |
 |---|---|---|
-| Idempotency key per message | Provider can deduplicate | Requires provider support (mock it) |
+| Idempotency key per message | Provider can deduplicate | Requires provider support |
 | Cancel-on-first-success | Reduces duplicates | Race between cancel and delivery |
 | Dedup window (ignore same message within N seconds) | Simple | Too short = misses, too long = blocks legit retries |
 | Accept it, document it | Honest | Users complain |
 
-**What to look for:** There is no clean answer. The candidate should pick one, implement it, and write a test that verifies: send with 3s delay and 1s timeout → only one delivery logged. They must produce a **code artifact**, not just discuss the options.
+**What to look for:** The candidate should pick an approach and justify the trade-off. If time permits, have them sketch the implementation. A candidate who says "there is no perfect solution here, but I'd pick X because Y" is stronger than one who tries to build a perfect solution.
 
 ## Phase 4: The Audit Trail (~5 min if time permits)
 
@@ -98,6 +98,6 @@ Then ask: *"Show me how you'd trace notification notif-abc-123 from initial send
 
 - **The cycle is in the config, not the code.** The AI wrote correct failover logic — the bug is in data it never saw. This trap fires reliably regardless of AI quality.
 - **Phase 2** is observable — the candidate can count the calls and see the storm.
-- **Phase 3** requires a code artifact (dedup implementation + test), not just a discussion.
+- **Phase 3** tests design judgment on a problem with no clean solution — the trade-off reasoning is the signal.
 - **Phase 4** turns "add logging" into a concrete task with a specific deliverable (trace a notification's journey).
 - The progression mirrors real production incidents: bad config → overload → duplicate delivery → "where did it go?"
