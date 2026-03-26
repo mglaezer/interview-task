@@ -2,98 +2,102 @@
 
 ## Goal
 
-A CLI "Virtual Canvas" where users can manage a list of geometric points persisted to a `canvas.json` file.
+Test whether a candidate can catch interaction bugs between independently correct features, and make deliberate design trade-offs the AI cannot resolve.
 
-## Phase 1: The Basics
+## Setup (Interviewer Prepares in Advance)
 
-Ask the candidate to build:
+Provide the candidate with:
 
-- `add-point x y` — adds a point, returns its ID
-- `remove-point id` — removes a point
-- `move-point id dx dy` — moves a point by a delta
-- `list` — shows all points
+- A working CLI canvas: `add-point x y`, `remove-point id`, `move-point id dx dy`, `list`
+- Points persist to `canvas.json`
+- 5 points pre-loaded so they don't start with an empty canvas
 
-The AI produces clean CRUD. Let it.
+This eliminates CRUD boilerplate. The interview starts at the design problem.
 
-## Phase 2: Undo
+## Phase 1: Undo (~5 min)
 
 > "Add an `undo` command that reverts the last action."
 
-The AI will implement this — likely with the command pattern or state snapshots. Either is fine at this scale. Don't critique the approach yet.
-
-Have them test it:
+The AI will implement this — likely with the command pattern or state snapshots. Either approach is fine at this point. Have them verify:
 
 ```
-add-point 0 0      → point 1
-add-point 5 5      → point 2
-move-point 1 10 10 → point 1 is now at (10, 10)
-undo                → point 1 is back at (0, 0)
-undo                → point 2 is removed
+add-point 0 0      → point 6
+move-point 6 10 10 → point 6 is at (10, 10)
+undo                → point 6 is back at (0, 0)
+undo                → point 6 is removed
 ```
 
-Confirm it works.
+Don't critique the approach yet.
 
-## Phase 3: The Compound Operation
+## Phase 2: Groups — The Interaction Bug (~10 min)
 
-> "Add `move-all dx dy` — moves every point by the given delta."
+> "Add `group create id1 id2 ...` (creates a named group) and `group move group-id dx dy` (moves all points in the group)."
 
-After they implement it, ask:
+Let the AI implement it. Then have them run this sequence:
 
-> "I have 100 points. I run `move-all 5 5`. Now I run `undo`. What happens?"
+```
+group create g1 1 2 3
+group move g1 5 5
+undo                     → group move is reverted, points back to original positions
+undo                     → group g1 is removed
+undo                     → ??? what happens to the next undo?
+redo                     → ??? does the group come back?
+redo                     → ??? does the group move re-apply? Do the points still exist in the group?
+```
 
-**What happens:** If the AI implemented `move-all` as a loop of individual `move-point` commands, then `undo` only reverts the last point's move. The user has to hit undo 100 times to fully revert one operation.
+**What happens:** The AI will implement groups and undo separately, each correctly in isolation. But the interaction between them creates subtle bugs:
+
+- If undo removes the group, does redo restore it with the same members — even if those points were modified in between?
+- If a point is deleted after being added to a group, and then the user undoes the group creation, what happens?
+- Does `group move` create one undo entry or N entries (one per point)?
 
 **What to look for:**
-- Does the candidate notice the problem before or after testing?
-- Do they implement **composite commands** — a single undo entry that wraps all 100 moves?
-- Or do they restructure so `move-all` is a first-class operation with its own undo logic?
+- Does the candidate discover these bugs by testing, or does the AI somehow handle all of them? (If the AI handles them, ask the candidate to explain *how* — that's the checkpoint.)
+- Do they implement a **composite command** for `group move` so that a single undo reverts all point moves at once?
+- Can they articulate the invariant: "undo/redo must maintain referential integrity between groups and points"?
 
-This is a UX bug, not a crash. The code is technically "correct." The AI won't flag it.
+**Checkpoint — "Explain your AI's code":** Point to the group move undo logic. Ask: "If I delete point 2 after this group move, then undo the group move, what happens to point 2's position?" The candidate must trace through their code — the AI cannot answer this about its own generated code without context.
 
-## Phase 4: The Branching Problem
+## Phase 3: Redo and the Branching Decision (~7 min)
 
-Have them add `redo`, then run this sequence:
+> "Add `redo`. Then run this sequence:"
 
 ```
-add-point 0 0      → point 1
-add-point 5 5      → point 2
-undo                → point 2 removed
-add-point 3 3      → point 3
+add-point 0 0      → point 6
+add-point 5 5      → point 7
+undo                → point 7 removed
+add-point 3 3      → point 8
 redo                → ???
 ```
 
-Ask: *"What should `redo` do here?"*
+Ask: *"What should redo do here? Why?"*
 
-**What happens:** The candidate must decide between two models:
+The AI will implement linear history (clear redo stack on new action). That's probably correct — but the candidate must justify it:
 
 | Model | Behavior | Trade-off |
 |---|---|---|
-| **Linear** (most editors) | Redo stack is cleared when a new action is performed. `redo` does nothing. | Simple, predictable. The "undone future" is lost forever. |
-| **Tree** (Emacs, some IDEs) | History branches. `redo` could navigate between branches. | Powerful but complex. Hard to build, hard to explain to users. |
+| **Linear** (most editors) | Redo stack cleared on new action. Simple, predictable. | The "undone future" is lost forever. |
+| **Tree** (Emacs, some IDEs) | History branches. Redo navigates branches. | Powerful but complex UX. |
 
-**What to look for:** The AI will almost certainly implement linear history. That's fine — but can the candidate explain *why* that's the right choice for this use case? Can they articulate what the user loses?
+**What to look for:** Not which model they choose — but whether they recognize there IS a choice. "That's just how undo works" is weak. "Linear, because the branching UX would confuse users in a CLI tool" is strong.
 
-There's no right answer. "Linear, because it's what users expect from Ctrl+Z" is a valid justification.
+## Phase 4: Persistent History (~5 min if time permits)
 
-## Phase 5: Memory at Scale (If Time Permits)
+> "The undo history must survive process restarts. When I reopen the tool, I should be able to undo my last session's work."
 
-> "The canvas now has 10,000 points. The user performs 10,000 `move-all` operations. Profile memory usage."
+This forces serialization of commands to disk — which raises real design questions:
 
-If the AI used **state snapshots** (memento pattern), this stores 10,000 copies of 10,000 points — ~100M point records. Memory explodes.
+- What format? JSON commands? A log file?
+- What if the code changes but old undo history references a command type that no longer exists?
+- How big can the history file get? Do you cap it?
 
-If it used **command deltas**, it stores 10,000 small command objects. Memory is flat.
-
-Ask: *"How would you detect this problem before it hits production?"*
-
-**What to look for:**
-- Do they add a **history size limit** with a strategy for what happens when it's exceeded (drop oldest entries, compress, persist to disk)?
-- Do they mention **benchmarking** or **profiling** rather than just reasoning about it?
-- Can they articulate: "snapshots are O(n) per operation, deltas are O(1)" — even approximately?
+**What to look for:** This is a constraint that defeats AI pattern-matching. The AI can serialize commands, but handling versioning and forward compatibility requires judgment. Does the candidate think about what happens in 6 months when someone adds a new command type?
 
 ## Why This Task Works
 
-- Phase 2 lets the AI succeed — the candidate builds momentum with working undo.
-- Phase 3 is a **UX bug in correct code** — the AI produces something that works but frustrates users. This is subtle.
-- Phase 4 has **no right answer** — it tests whether the candidate can make a deliberate design choice and justify it.
-- Phase 5 is an **observable performance failure** — you can measure it, not just argue about it.
-- The progression tests: correctness → usability → design judgment → scalability.
+- **Starter code** skips 5 minutes of CRUD boilerplate.
+- **Phase 2's bug is in the interaction** between two features (groups + undo), not in either feature alone. The AI implements each correctly — the bug emerges at the boundary.
+- **Phase 2's test sequence** is concrete — the candidate must run it and observe what happens, not just discuss it.
+- **Phase 3** has no right answer — it tests design judgment the AI cannot provide.
+- **Phase 4** introduces a constraint (persistence) that creates real decisions about format, versioning, and limits.
+- The "explain your AI's code" checkpoint in Phase 2 catches candidates who accepted the AI's output without understanding the interaction.

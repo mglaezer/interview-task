@@ -2,72 +2,84 @@
 
 ## Goal
 
-A CLI app that manages bank accounts stored in a local `accounts.json` file.
+Test whether a candidate can observe, diagnose, and fix runtime failures that AI-generated code produces — then anticipate the next failure mode.
 
-## Phase 1: The Basics
+## Setup (Interviewer Prepares in Advance)
 
-Ask the candidate to build:
+Provide the candidate with:
 
-- `create-account --name A --balance 1000`
-- `transfer --from A --to B --amount 100`
-- Data persists in a JSON file after every transaction.
+- A working CLI bank app: `create-account`, `transfer --from A --to B --amount N`
+- An `accounts.json` file with two accounts: A ($1000), B ($1000)
+- A test script (`stress-test.sh`) that runs 50 concurrent transfers of $1 from A to B
 
-This phase is a warm-up. The AI will produce clean, working code. Let it.
+The code uses a naive Read → Modify → Write cycle with no locking. The bug is already present. The interview starts at "run this, it's broken."
 
-## Phase 2: Break It
+## Phase 1: Observe and Diagnose (~5 min)
 
-Ask the candidate:
+> "Run `stress-test.sh`. Account A should end with $950, B with $1050. Check the actual result."
 
-> "Simulate 50 simultaneous transfers of $1 from A to B. Both accounts start with $1000. What should the final balances be?"
+The balances will be wrong — lost updates from concurrent writes.
 
-The expected answer is A=$950, B=$1050. Have them run it. It won't be.
+Ask: *"What happened? Why are the numbers wrong?"*
 
-**What happens:** The AI's "Read -> Modify -> Write" cycle causes lost updates when multiple processes read the same balance before any writes land. The candidate should **observe** the corruption, not just be told about it.
+**What to look for:**
+- Can the candidate explain the Read → Modify → Write race without prompting?
+- Do they draw a timeline of two concurrent processes reading the same stale value?
+- Or do they just paste the error into the AI and accept its explanation?
 
-**Interviewer note:** If the candidate says "this will have race conditions" *before* running it — that's a strong signal. Let them explain, then ask them to prove it.
+**Checkpoint — "Explain the bug":** Ask them to describe a specific interleaving of two transfers that produces a wrong result. Not the concept — a concrete step-by-step trace. This cannot be faked by prompting the AI.
 
-## Phase 3: Fix It — But Choose Your Trade-off
+## Phase 2: Fix It — Choose and Justify (~10 min)
 
-Don't say "add file locking." Instead ask:
+> "Fix the concurrency bug. What are your options?"
 
-> "How would you fix this? What are your options?"
-
-There are several valid approaches, each with real trade-offs:
+Let them discuss trade-offs before coding:
 
 | Approach | Upside | Downside |
 |---|---|---|
-| File locking (e.g., `flock`) | Simple, no new dependencies | Doesn't scale beyond one machine |
-| In-memory queue/mutex | Fast, no I/O overhead | Lost on crash, single-process only |
-| SQLite instead of JSON | ACID transactions built-in | Changes the storage layer entirely |
-| Transaction log (append-only) | Crash-recoverable, auditable | More complex to implement |
+| File locking (`flock`) | Simple, no dependencies | Single machine only |
+| In-memory mutex | Fast | Lost on crash, single-process only |
+| SQLite | ACID built-in | Changes storage layer |
+| Append-only transaction log | Crash-recoverable, auditable | More complex |
 
-**What to look for:** The candidate should be able to articulate *why* they're picking one over another. "The AI suggested file locking" is not a justification. "File locking is simplest and we only need single-machine — we can upgrade later" is.
+Then have them implement their chosen approach and re-run `stress-test.sh`. The test must now pass.
 
-## Phase 4: The Double-Spend
+**What to look for:** The justification matters more than the choice. "File locking because we're single-machine and it's the least invasive change" is strong. "The AI suggested it" is weak.
 
-After they fix concurrency, present this:
+**Checkpoint — "Walk me through the fix":** After the AI generates the locking code, ask the candidate to explain: Where is the lock acquired? What happens if the process dies while holding the lock? Is the lock advisory or mandatory? If they cannot answer, they did not understand the fix.
 
-> "Account A has $100. Two transfers happen simultaneously: $80 to B, and $80 to C. Only one should succeed. Make it work."
+## Phase 3: Separate Account Files (~8 min)
 
-This is harder than Phase 2 because the lock alone isn't enough — they need **balance validation inside the critical section**. The sequence must be: lock, read, validate, write, unlock. If they validate *before* locking, the same bug returns.
+> "Accounts are now stored in separate files: `accounts/A.json`, `accounts/B.json`. A transfer must debit one file and credit another. Adapt your solution."
 
-**What to look for:** Can they identify that the check-then-act must be atomic? This is a classic TOCTOU (time-of-check to time-of-use) problem.
+This introduces a fundamentally new concern: **multi-resource locking and deadlock**.
 
-## Phase 5: Crash Recovery (If Time Permits)
+If Transfer 1 locks A then B, and Transfer 2 locks B then A simultaneously, they deadlock.
 
-> "What happens if the process crashes after debiting A but before crediting B? The money vanishes."
+**What to look for:**
+- Does the candidate identify the deadlock risk before or after it happens?
+- Do they implement **lock ordering** (always lock alphabetically) or another deadlock prevention strategy?
+- Can they explain why single-file locking didn't have this problem?
 
-Ask them to handle this. Valid approaches:
+This is genuinely harder than Phase 2 — the AI will produce locking code, but it may not enforce a consistent lock ordering. The bug is in the interaction between two correct lock operations.
+
+## Phase 4: Crash Recovery (~5 min if time permits)
+
+> "What if the process crashes after debiting A but before crediting B? The money vanishes."
+
+This can be a discussion or a coding exercise depending on remaining time:
 
 - **Write-ahead log:** Log the intent before executing. On startup, replay incomplete transactions.
-- **Two-phase write:** Write to a temp file, then atomic rename.
-- **Compensating transaction:** Detect partial failures and reverse them.
+- **Two-phase write:** Debit and credit to temp files, then atomic rename both.
+- **Compensating transaction:** Detect partial failures on startup and reverse them.
 
-**What to look for:** Does the candidate reason about **durability**, not just correctness? Do they consider what state the file is in after a crash?
+**What to look for:** Does the candidate reason about **durability**, not just correctness? Do they recognize that "what state is on disk after a crash" is a different question from "does the logic work?"
 
 ## Why This Task Works
 
-- The AI produces code that **looks correct but fails at runtime** — asking "is this good design?" won't surface the bug.
-- Each phase adds a new failure mode that requires **reasoning about execution order**, not just code structure.
-- There's no single right answer at any phase — the candidate must **choose and justify** trade-offs.
-- The progression (observe failure → diagnose → fix → anticipate next failure) mirrors real incident response.
+- **Starter code with a pre-built test** eliminates setup time and makes the failure deterministic and observable.
+- **Phase 1** tests diagnosis, not pattern-matching — the candidate must trace a specific interleaving.
+- **Phase 2** requires a code artifact (fix + passing test), not just discussion.
+- **Phase 3** is genuinely different from Phase 2 — it introduces multi-resource coordination and deadlock, not just "more locking."
+- **"Explain your AI's code" checkpoints** directly test whether the candidate understands the fix or just accepted it.
+- The AI can suggest locking, but it's unlikely to handle lock ordering correctly across separate files without being explicitly directed.

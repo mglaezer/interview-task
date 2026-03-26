@@ -2,81 +2,102 @@
 
 ## Goal
 
-A CLI service that routes notifications to different providers (SMS, Email, Push), with mock providers that can be configured to fail.
+Test whether a candidate can reason about cascading failures, duplicate delivery, and system behavior that only breaks with specific data — not specific code.
 
-## Phase 1: Basic Routing
+## Setup (Interviewer Prepares in Advance)
 
-Ask the candidate to build:
+Provide the candidate with:
 
-- `notify --user alice --channel email --message "Hello"`
-- Providers are mocks that log to stdout: `[EMAIL] Sent to alice: Hello`
-- A `users.json` file stores user preferences and contact info (email, phone, device token).
+- A working CLI: `notify --user alice --channel email --message "Hello"`
+- Mock providers (SMS, Email, Push) that log to stdout
+- A `users.json` with user preferences and contact info
+- A `failover.json` config that defines fallback chains: `{ "email": "sms", "sms": "push", "push": null }`
+- Providers accept a `--fail-rate N` flag to simulate failure (e.g., `--fail-rate 0.5` = 50% failure)
 
-This is a warm-up. The AI will produce a clean router. Let it.
+The routing and basic failover already work. The interview starts at "here's a working system — now break it."
 
-## Phase 2: Priority Routing
+## Phase 1: The Cycle in the Config (~8 min)
 
-Add priority levels:
+Hand the candidate an updated `failover.json`:
 
-- `--priority high` → send to ALL channels the user has configured
-- `--priority low` → send to Push only
+```json
+{ "email": "sms", "sms": "email", "push": null }
+```
 
-Still straightforward. The AI handles this fine.
+> "A new team submitted this failover config. Deploy it and send a notification to alice via email with `--fail-rate 1` (always fails). What happens?"
 
-## Phase 3: Failover — The Loop
-
-Add configurable failure to the mocks:
-
-> "The Email provider now fails 50% of the time (returns a 500). If Email fails, retry via SMS — but only if the user has a phone number on file."
-
-Have them implement it, then ask:
-
-> "What happens if SMS also fails? And the failover for SMS is Email?"
-
-**What happens:** The AI will likely write linear failover logic (email → SMS) without considering cycles. When you add SMS → Email failover, it creates an **infinite retry loop**. Even if the AI avoids the literal infinite loop, it will probably retry too aggressively — 50 failures in a second.
+**What happens:** Email fails → falls back to SMS → SMS fails → falls back to Email → infinite loop. The system hangs or crashes.
 
 **What to look for:**
-- Does the candidate identify the loop risk before or after running it?
-- Do they implement **retry limits**, **circuit breakers**, or a **visited-providers set** to break the cycle?
-- Can they articulate the trade-off: retry more (higher delivery rate) vs. retry less (lower system load, fewer duplicates)?
+- Does the candidate spot the cycle by reading the config before running it? (Strong signal.)
+- After observing the loop, how do they fix it? Options:
+  - **Visited-set per notification:** Simple, prevents cycles. Doesn't help with non-cyclic retry storms.
+  - **Global retry limit:** Caps total attempts. Simple but blunt.
+  - **Cycle detection on config load:** Rejects invalid configs upfront. Prevents the problem entirely.
+- Do they add **config validation** so this can never happen again, or just patch the runtime?
 
-## Phase 4: The Duplicate
+**Why this is better than hoping the AI writes a loop:** The cycle is in the *data*, not the code. The AI wrote correct failover logic — the bug is in a config file the AI never saw. This reliably produces the failure regardless of how good the AI is.
 
-After failover works, present this scenario:
+**Checkpoint — "Explain your fix":** If they add a visited-set, ask: "What if the failover chain is email → sms → push → sms? That's not a cycle from email, but sms appears twice. Does your fix handle it?" This tests whether they understand their own solution's boundaries.
 
-> "Email to alice fails. Failover sends via SMS successfully. But the email provider had a network timeout, not a real failure — it actually delivered the email 30 seconds later. Alice got the notification twice."
+## Phase 2: The Retry Storm (~7 min)
 
-Ask: *"How do you prevent this?"*
+> "Set all providers to `--fail-rate 0.3`. Send 100 notifications in a loop. Watch the output."
 
-This is a real production problem with no clean solution. Valid approaches:
+With 30% failure and aggressive retry, the system floods providers with retry traffic — each failure generates more attempts, which generate more failures.
+
+Ask: *"How many total provider calls were made for 100 notifications? Is that acceptable?"*
+
+**What to look for:**
+- Do they implement **exponential backoff** or a **circuit breaker** (stop calling a provider that's been failing)?
+- Can they articulate the trade-off: retry more (higher delivery rate, more load on failing provider) vs. retry less (lower delivery rate, less cascading damage)?
+- Do they consider that retrying into a failing provider makes the provider's situation worse?
+
+## Phase 3: The Duplicate (~8 min)
+
+Set email to `--fail-rate 0` (never fails) but add a `--delay 3` flag (responds after 3 seconds).
+
+> "Send a notification via email. The system times out after 1 second and fails over to SMS. But the email was actually delivered — it was just slow. Alice gets the notification twice. Fix it."
+
+This is a real distributed systems problem. Have the candidate implement a solution:
 
 | Approach | Upside | Downside |
 |---|---|---|
-| Idempotency key per notification | Provider can deduplicate | Requires provider support |
-| Cancel pending retries on first success | Reduces duplicates | Race condition between cancel and delivery |
-| Accept duplicates, deduplicate on client | Simple server-side | Pushes complexity to client |
-| Time-bounded dedup window | Catches most duplicates | Window too short = misses, too long = memory |
+| Idempotency key per message | Provider can deduplicate | Requires provider support (mock it) |
+| Cancel-on-first-success | Reduces duplicates | Race between cancel and delivery |
+| Dedup window (ignore same message within N seconds) | Simple | Too short = misses, too long = blocks legit retries |
+| Accept it, document it | Honest | Users complain |
 
-**What to look for:** There's no perfect answer. The candidate should recognize this is a **distributed systems problem** (at-least-once vs. at-most-once delivery) and pick an approach with eyes open about its limitations.
+**What to look for:** There is no clean answer. The candidate should pick one, implement it, and write a test that verifies: send with 3s delay and 1s timeout → only one delivery logged. They must produce a **code artifact**, not just discuss the options.
 
-## Phase 5: Observability (If Time Permits)
+## Phase 4: The Audit Trail (~5 min if time permits)
 
-> "A user reports they never received a notification. How do you figure out what happened?"
+> "A user reports they never received a notification sent 2 hours ago. How do you figure out what happened?"
 
-Ask the candidate to add enough structure to debug this. The question is deliberately vague.
+Ask the candidate to add a `delivery-log.json` that records every notification attempt:
+
+```json
+{
+  "id": "notif-abc-123",
+  "user": "alice",
+  "channel": "email",
+  "status": "timeout",
+  "failover_to": "sms",
+  "timestamp": "2026-03-25T10:30:00Z"
+}
+```
+
+Then ask: *"Show me how you'd trace notification notif-abc-123 from initial send to final delivery (or final failure)."*
 
 **What to look for:**
-- Do they add a **delivery log** (notification ID, channel, status, timestamp)?
 - Do they assign a **correlation ID** that follows a notification through retries and failovers?
-- Do they distinguish between "we sent it" and "they received it" — and acknowledge we often can't know the latter?
-
-A weak answer: "add console.log statements."
-A strong answer: structured logging with correlation IDs, and an acknowledgment that delivery confirmation depends on the provider.
+- Can they produce a timeline view: `email: timeout → sms: delivered`?
+- Do they distinguish "we sent it" from "they received it"?
 
 ## Why This Task Works
 
-- Phase 1–2 let the AI shine — the candidate builds confidence and momentum.
-- Phase 3 introduces a **runtime failure** (infinite loop) that the AI is unlikely to prevent.
-- Phase 4 has **no correct answer** — it tests trade-off reasoning, not pattern knowledge.
-- Phase 5 tests **production thinking** — most candidates (and AI tools) stop at "it works on my machine."
-- The progression mirrors a real on-call incident: it works → it fails sometimes → it fails in a way that makes things worse → users complain.
+- **The cycle is in the config, not the code.** The AI wrote correct failover logic — the bug is in data it never saw. This trap fires reliably regardless of AI quality.
+- **Phase 2** is observable — the candidate can count the calls and see the storm.
+- **Phase 3** requires a code artifact (dedup implementation + test), not just a discussion.
+- **Phase 4** turns "add logging" into a concrete task with a specific deliverable (trace a notification's journey).
+- The progression mirrors real production incidents: bad config → overload → duplicate delivery → "where did it go?"

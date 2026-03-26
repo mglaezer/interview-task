@@ -2,85 +2,90 @@
 
 ## Goal
 
-Build a CLI tool to calculate shipping costs based on varying business rules.
+Expose whether a candidate notices when AI silently resolves ambiguous business rules.
 
-## Phase 1: The Basics
+## Setup (Interviewer Prepares in Advance)
 
-Ask the candidate to build:
+Provide the candidate with:
 
-- `calculate --weight 10 --distance 100`
-- Price = `Weight * $10` + `Distance * $5`
-- Add a `--fragile` flag that adds a flat +$50 surcharge.
+- A working CLI shipping calculator with `calculate --weight N --distance N --fragile`
+- Price formula: `Weight * $10 + Distance * $5 + (Fragile ? $50 : 0)`
+- A `test-cases.json` file with 3 passing cases that verify the base logic
 
-The AI produces a clean function. Let it.
+This eliminates 5 minutes of boilerplate. The interview starts immediately at the interesting part.
 
-## Phase 2: The Ambiguity
+## Phase 1: Add Rules, Get a Bug You Can't See (~5 min)
 
-Add two new rules in a single request:
+Give the candidate this spec in one shot:
 
-> "Add a Holiday Discount of 10% — but only if the total is over $200. Also add a Regional Tax that varies by country code (US: 8%, DE: 19%, JP: 10%)."
+> "Add two new rules: a Holiday Discount of 10% (only if total exceeds $200) and a Regional Tax by country code (US: 8%, DE: 19%, JP: 10%)."
 
-Have them implement it and calculate a shipment: `--weight 15 --distance 200 --fragile --country US --holiday`
+Let them implement it with AI. It will produce clean, working code.
 
-Then ask:
+Then hand them this test case:
 
-> "Is the discount applied before or after tax? Does the tax apply to the discounted price or the original?"
+```
+Input:  --weight 15 --distance 200 --fragile --country US --holiday
+Finance team says the correct answer is: $302.40
+```
 
-**What happens:** The AI will silently pick an order — probably discount first, then tax. It won't mention the ambiguity. The candidate gets working code that may implement the wrong business logic.
+Ask: *"Does your tool match? If not, why not?"*
 
-**What to look for:** Does the candidate notice the AI made an assumption? Do they ask *you* (the interviewer acting as product owner) to clarify, rather than just accepting whatever the AI chose?
+**What happens:** The AI silently chose an ordering — probably discount-then-tax or tax-then-discount. The finance team's number assumes a specific ordering. The candidate must **reverse-engineer** which ordering produces $302.40 and compare it to what their code does. This is debugging a business logic mismatch, not answering a trivia question.
 
-## Phase 3: Conflicting Rules
+**What to look for:** Does the candidate trace the calculation step by step, or do they just re-prompt the AI? Can they identify that the ordering is the issue without being told?
 
-Add more rules:
+## Phase 2: The Impossible Test Suite (~8 min)
 
-> "Loyalty customers get 15% off. Holiday discount is 10% off. Both apply to the same order."
+Add another rule:
 
-Ask: *"What's the final price?"*
+> "Loyalty customers get 15% off."
 
-This has at least three interpretations:
+Then hand them two test cases from two different stakeholders:
 
-| Interpretation | Formula (on $300 base) | Result |
-|---|---|---|
-| Additive (25% off) | $300 × 0.75 | $225.00 |
-| Compounding (15%, then 10%) | $300 × 0.85 × 0.90 | $229.50 |
-| Best discount wins (15%) | $300 × 0.85 | $255.00 |
+```
+Test A (from Sales):   weight 20, distance 100, loyal, holiday → expects $229.50
+Test B (from Finance): weight 20, distance 100, loyal, holiday → expects $225.00
+```
 
-**What happens:** The AI picks one silently — usually additive or compounding. The candidate gets a number, but can they explain *why* that number?
+Ask: *"Make both tests pass."*
 
-**What to look for:** Does the candidate recognize there are multiple valid interpretations? Do they define an explicit rule resolution policy rather than accepting the AI's implicit choice?
-
-## Phase 4: Explain the Bill
-
-> "A customer says their shipment cost $347.82 but they expected around $300. Trace how the price was calculated."
-
-Ask the candidate to make the engine produce an itemized breakdown — not just the final number.
-
-**What happens:** The AI's clean `calculate()` function returns a single number. Adding a breakdown requires restructuring — each rule must output its contribution, not just mutate a running total.
+**What happens:** Test A assumes compounding discounts (15% then 10%). Test B assumes additive (25% off). Both tests cannot pass simultaneously — the business rules are contradictory. The candidate must recognize this is a **requirements conflict**, not a code bug.
 
 **What to look for:**
-- Do they add a **pipeline** where each rule returns its adjustment with a label?
-- Or do they bolt on logging as an afterthought?
-- Can they show: `Base: $250 + Fragile: $50 + Tax (8%): $24 - Holiday (-10%): -$30 = $294`?
+- Does the candidate try increasingly complex code to make both pass? (Weak — the AI will happily oblige with hacks.)
+- Do they stop and say "these specs contradict each other — we need a decision"? (Strong.)
+- Do they ask *you* (the product owner) which interpretation is correct? (Strongest.)
 
-A strong candidate recognizes this as an **auditability** requirement, not just a debugging exercise. Billing systems that can't explain their output are a liability.
+## Phase 3: Explain the Bill (~8 min)
 
-## Phase 5: The 10th Rule (If Time Permits)
+> "A customer disputes a charge of $347.82. Make the engine produce an itemized breakdown showing how the total was calculated."
 
-> "We're adding 5 more rules next quarter: bulk weight tiers, insurance, fuel surcharge, weekend delivery premium, and promotional codes. How confident are you that adding them won't break existing rules?"
-
-Don't ask them to implement all five. Ask them to **evaluate their current design** against this future.
+This requires restructuring — the AI's `calculate()` function returns a single number. Each rule must now output its contribution with a label.
 
 **What to look for:**
-- Is each rule isolated — can you add one without reading every other rule's code?
-- Is there a test that verifies rule X doesn't change the output when rule Y is added?
-- Do they mention **regression testing** or **golden file tests** (known inputs → expected outputs)?
+- Do they refactor toward a **pipeline** where each rule returns `{ label, amount }`, or bolt on logging as an afterthought?
+- Does the breakdown actually trace to the final number, or are there rounding gaps?
+- Can they show something like: `Base: $250 | Fragile: +$50 | Holiday: -$30 | Tax (8%): +$21.60 | Total: $291.60`?
 
-A weak answer: "the AI will handle it." A strong answer: "each rule is independent, and I'd add a test fixture with known scenarios that must remain stable."
+**Checkpoint — "Explain your AI's code":** Ask the candidate to walk through the refactored pipeline and explain why the rules execute in the order they do. If they cannot justify the ordering, they did not understand the AI's output.
+
+## Phase 4: The 10th Rule (~5 min)
+
+> "Add a Bulk Weight Tier: orders over 50kg get a 5% discount on the weight component only. Add it without changing any existing test outputs."
+
+This is a small, concrete task that tests whether their design is actually extensible:
+
+- Can they add a rule without reading every other rule's code?
+- Do the existing test cases still pass after adding the new rule?
+- If a test breaks, can they explain why?
+
+**What to look for:** A strong candidate runs existing tests before and after adding the rule. A weak candidate adds the rule and hopes for the best.
 
 ## Why This Task Works
 
-- The AI produces **correct-looking code at every phase** — the bugs are in silent assumptions, not crashes.
-- Phase 2–3 test **ambiguity detection** — a skill AI tools actively undermine by always giving you *an* answer.
-- Phase 4 tests **production thinking** — billing systems must explain themselves.
-- No design pattern saves you here — the Strategy pattern handles structure, but not rule ordering, conflict resolution, or auditability.
+- **Phase 1** forces debugging through a contradictory test case — not a leading question.
+- **Phase 2** is literally unsolvable with code — it tests whether the candidate knows when to stop coding and start asking questions.
+- **Phase 3** requires a code artifact (itemized breakdown), not just a verbal answer.
+- **Phase 4** is a 5-minute hands-on extensibility test with a concrete pass/fail criterion.
+- Asking the AI "what are the ambiguities?" helps somewhat, but the contradictory test cases force the candidate to **prove** they understand the issue, not just acknowledge it.

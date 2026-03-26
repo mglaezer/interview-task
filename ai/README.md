@@ -1,6 +1,6 @@
 # AI-Assisted Technical Interview Tasks
 
-This guide is designed for technical interviews where the candidate is encouraged to use AI (Cursor, Copilot, etc.). The goal is to see if the candidate can **direct** the AI's architectural choices rather than just accepting its first (usually "naive") output.
+This guide is designed for technical interviews where the candidate is encouraged to use AI (Cursor, Copilot, etc.). The goal is to see if the candidate can **reason about** the AI's output — not just accept it.
 
 ## For Candidates
 
@@ -13,27 +13,41 @@ What we're evaluating:
 
 Think of yourself as the architect and the AI as a fast but opinionated junior developer. Your job is to lead.
 
-## Interviewer's Philosophy
+## For Interviewers
 
-In 2026, we don't test if a candidate can write a loop. We test if they can:
+### Preparation
 
-- **Anticipate Complexity**: Spot where the AI is leading them into a "Big Ball of Mud."
-- **Enforce Patterns**: Direct the AI to use specific design patterns (Strategy, Command, etc.).
-- **Validate Integrity**: Identify where the AI ignores edge cases like concurrency or memory limits.
+Each task requires **starter code** provided to the candidate in advance. This is intentional — we don't evaluate candidates on boilerplate. Prepare the starter code before the interview.
+
+### Design Principles
+
+These tasks are built around failures that AI tools cannot prevent:
+
+- **Bugs in data, not code.** The AI writes correct logic, but the bug is in a config file, test case, or interaction the AI never saw.
+- **Contradictory requirements.** Two stakeholders want different things. No amount of code solves a requirements conflict.
+- **Interaction bugs.** Two features work correctly in isolation but break at the boundary. The AI implements each feature independently.
+- **Trade-offs with no right answer.** The candidate must choose and justify — the AI can list options but cannot make the decision.
+
+### During the Interview
+
+- **Don't ask leading questions.** Give contradictory test cases and let the candidate discover the problem.
+- **Use "explain your AI's code" checkpoints.** After the AI generates a fix, ask the candidate to trace through specific scenarios line by line. This is the highest-signal moment in the interview.
+- **Watch for the "stop coding" moment.** The strongest signal is when a candidate recognizes that a problem cannot be solved with code and starts asking questions instead.
 
 ## Tasks
 
-1. [The Strategy Trap (Billing Engine)](task-1-strategy-trap.md)
-2. [The Race Condition Bank (Concurrent Transfers)](task-2-race-condition-bank.md)
-3. [The Command Trap (Undo/Redo System)](task-3-command-trap.md)
-4. [The Dispatcher Trap (Notification Router)](task-4-dispatcher-trap.md)
+1. [The Silent Assumptions (Billing Engine)](task-1-strategy-trap.md) — AI silently resolves ambiguous business rules
+2. [The Race Condition Bank (Concurrent Transfers)](task-2-race-condition-bank.md) — correct code that breaks at runtime under concurrency
+3. [The Command Trap (Undo/Redo System)](task-3-command-trap.md) — features that work in isolation but break at the boundary
+4. [The Dispatcher Trap (Notification Router)](task-4-dispatcher-trap.md) — cascading failures from data, not code
 
 ## Evaluation Criteria
 
-| Behavior | Junior / "AI-Reliant" Candidate | Senior / "AI-Architect" Candidate |
+| Behavior | Weak Signal | Strong Signal |
 |---|---|---|
-| **Prompting** | "Write code for X." | "Design X using the Strategy pattern." |
-| **Logic** | Accepts the AI's if/else logic. | Refactors for the Open-Closed Principle. |
-| **Failure** | Surprised when the balance corrupts. | Mentions Race Conditions before coding. |
-| **Refactoring** | Asks AI: "Fix this bug." | Asks AI: "Extract this to a separate Service." |
-| **Testing** | Tests only the "Happy Path." | Tests for Edge Cases (Memory, Concurrency). |
+| **Diagnosis** | Pastes error into AI, accepts explanation | Traces the bug step-by-step before asking AI |
+| **Ambiguity** | Accepts AI's silent assumption | Stops and says "this spec is contradictory" |
+| **Trade-offs** | "The AI suggested X" | "X because [constraint], but we lose [trade-off]" |
+| **AI output** | Accepts generated code without reading it | Walks through the code and questions specific decisions |
+| **Testing** | Tests the happy path | Tests the interaction between features |
+| **Production** | "It works on my machine" | "What happens when this crashes / scales / gets bad input?" |
