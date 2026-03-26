@@ -2,6 +2,17 @@
 
 This guide is designed for technical interviews where the candidate is encouraged to use AI (Cursor, Copilot, etc.). The goal is to see if the candidate can **direct** the AI's architectural choices rather than just accepting its first (usually "naive") output.
 
+## For Candidates
+
+This is **not** a traditional algorithm interview. You are expected to use AI tools (Cursor, Copilot, Claude, ChatGPT, etc.) throughout the task. Writing code by hand is not the point.
+
+What we're evaluating:
+- **How you direct the AI** — the prompts you give, the patterns you ask for, the constraints you set.
+- **Your design decisions** — can you recognize when the AI produces a naive solution and steer it toward a cleaner architecture?
+- **Your ability to anticipate problems** — edge cases, scalability, concurrency — before they blow up.
+
+Think of yourself as the architect and the AI as a fast but opinionated junior developer. Your job is to lead.
+
 ## Interviewer's Philosophy
 
 In 2026, we don't test if a candidate can write a loop. We test if they can:
